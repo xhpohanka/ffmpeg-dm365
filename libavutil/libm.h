@@ -38,8 +38,12 @@
 #define exp2f(x) ((float)exp2(x))
 #endif /* HAVE_EXP2F */
 
-#ifndef rint
-#define rint(x) ((double)((int)x))
+#if !HAVE_RINT
+#undef rint
+static av_always_inline av_const double rint(double x)
+{
+    return (x < 0.0) ? -floor(-x + 0.5) : floor(x + 0.5);
+}
 #endif
 
 #if !HAVE_LLRINT

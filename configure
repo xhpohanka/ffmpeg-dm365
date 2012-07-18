@@ -1073,6 +1073,7 @@ HAVE_LIST="
     ldbrx
     libdc1394_1
     libdc1394_2
+    rint
     llrint
     llrintf
     local_aligned_16
@@ -2845,6 +2846,7 @@ enabled vaapi && require vaapi va/va.h vaInitialize -lva
 
 check_mathfunc exp2
 check_mathfunc exp2f
+check_mathfunc rint
 check_mathfunc llrint
 check_mathfunc llrintf
 check_mathfunc log2
