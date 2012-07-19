@@ -368,3 +368,6 @@ static av_always_inline av_const int av_popcount_c(uint32_t x)
 #ifndef av_popcount
 #   define av_popcount      av_popcount_c
 #endif
+#ifndef SIZE_MAX
+#   define SIZE_MAX ((size_t) -1)
+#endif
