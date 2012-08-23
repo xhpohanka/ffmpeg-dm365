@@ -373,6 +373,8 @@ void avcodec_register_all(void)
     REGISTER_ENCODER (LIBAACPLUS, libaacplus);
     REGISTER_DECODER (LIBCELT, libcelt);
     REGISTER_ENCDEC  (LIBDIRAC, libdirac);
+    REGISTER_DECODER (LIBDM365_H264, libdm365_h264);
+    REGISTER_ENCODER (LIBDM365_H264, libdm365_h264);
     REGISTER_ENCODER (LIBFAAC, libfaac);
     REGISTER_ENCDEC  (LIBGSM, libgsm);
     REGISTER_ENCDEC  (LIBGSM_MS, libgsm_ms);
