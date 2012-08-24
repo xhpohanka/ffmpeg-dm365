@@ -144,6 +144,8 @@ static av_cold int dm365_encode_init(AVCodecContext *avctx)
         return AVERROR(1);
     }
 
+    avctx->coded_frame = &ctx->image;
+
     return 0;
 }
 
@@ -165,6 +167,7 @@ static int encoder_process(VIDENC1_Handle hEncode,
         AVCodecContext *avctx, uint8_t *buf,
         int buf_size, void *data)
 {
+    DM365Context *ctx = avctx->priv_data;
     IVIDEO1_BufDescIn inBufDesc;
     XDM_BufDesc outBufDesc;
     XDAS_Int8 *inPtr;
@@ -174,6 +177,7 @@ static int encoder_process(VIDENC1_Handle hEncode,
     IH264VENC_InArgs inH264Args;
     VIDENC1_OutArgs outArgs;
     XDAS_Int32 status;
+    AVFrame *pic = (AVFrame *)data;
 
     inBufDesc.frameWidth = avctx->width;
     inBufDesc.frameHeight = avctx->height;
@@ -182,7 +186,7 @@ static int encoder_process(VIDENC1_Handle hEncode,
     inBufDesc.bufDesc[0].bufSize = avctx->width * avctx->height;
     inBufDesc.bufDesc[1].bufSize = inBufDesc.bufDesc[0].bufSize * 2/3;
 
-    inPtr = data;
+    inPtr = pic->data[0];
     inBufDesc.bufDesc[0].buf = inPtr;
     inBufDesc.bufDesc[1].buf = inPtr + inBufDesc.bufDesc[0].bufSize;
 
@@ -210,10 +214,24 @@ static int encoder_process(VIDENC1_Handle hEncode,
     if (status != VIDENC1_EOK)
         return -1;
 
-    av_log(avctx, AV_LOG_ERROR, "bytes generated: %d\n", outArgs.bytesGenerated);
-//   ;
+    av_log(avctx, AV_LOG_DEBUG, "bytes generated: %d\n", (int) outArgs.bytesGenerated);
 
-    return 0;
+    switch (outArgs.encodedFrameType) {
+    case IVIDEO_IDR_FRAME:
+    case IVIDEO_I_FRAME:
+        ctx->image.key_frame = 1;
+        ctx->image.type = AV_PICTURE_TYPE_I;
+        break;
+    case IVIDEO_P_FRAME:
+        ctx->image.type = AV_PICTURE_TYPE_P;
+        break;
+    default:
+        ctx->image.type = AV_PICTURE_TYPE_NONE;
+        av_log(avctx, AV_LOG_WARNING, "unknown picture type\n");
+        break;
+    }
+
+    return outArgs.bytesGenerated;
 }
 
 static int dm365_encode_frame(AVCodecContext *avctx, uint8_t *buf,
@@ -233,5 +251,5 @@ AVCodec ff_libdm365_h264_encoder =
     .init           = dm365_encode_init,
     .close          = dm365_encode_close,
     .encode         = dm365_encode_frame,
-    .capabilities   = CODEC_CAP_HWACCEL | CODEC_CAP_DR1,
+    .capabilities   = CODEC_CAP_EXPERIMENTAL | CODEC_CAP_DR1,
 };
