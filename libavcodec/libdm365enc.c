@@ -137,10 +137,13 @@ static av_cold int dm365_encode_init(AVCodecContext *avctx)
     ctx->codecParams = h264Params;
     ctx->codecDynParams = h246DynParams;
 
-    ctx->hEncode = encoder_create(ctx->hEngine, "h264enc", (VIDENC1_Params *)h264Params,
-            (VIDENC1_DynamicParams *)h246DynParams);
+    ctx->hEncode = encoder_create(ctx->hEngine, "h264enc",
+            ctx->codecParams, ctx->codecDynParams);
     if (!ctx->hEncode) {
         av_log(avctx, AV_LOG_ERROR, "Cannot create encoder\n");
+        av_free(ctx->codecParams);
+        av_free(ctx->codecDynParams);
+        Engine_close(ctx->hEngine);
         return AVERROR(1);
     }
 
@@ -171,7 +174,6 @@ static int encoder_process(VIDENC1_Handle hEncode,
     IVIDEO1_BufDescIn inBufDesc;
     XDM_BufDesc outBufDesc;
     XDAS_Int8 *inPtr;
-    XDAS_Int8 *outPtr;
     XDAS_Int32 outBufSizeArray[1];
     VIDENC1_InArgs inArgs;
     IH264VENC_InArgs inH264Args;
@@ -184,7 +186,7 @@ static int encoder_process(VIDENC1_Handle hEncode,
     inBufDesc.framePitch = avctx->width;
 
     inBufDesc.bufDesc[0].bufSize = avctx->width * avctx->height;
-    inBufDesc.bufDesc[1].bufSize = inBufDesc.bufDesc[0].bufSize * 2/3;
+    inBufDesc.bufDesc[1].bufSize = inBufDesc.bufDesc[0].bufSize /2;
 
     inPtr = pic->data[0];
     inBufDesc.bufDesc[0].buf = inPtr;
@@ -192,10 +194,9 @@ static int encoder_process(VIDENC1_Handle hEncode,
 
     inBufDesc.numBufs = 2;
 
-    outPtr = buf;
     outBufSizeArray[0] = buf_size;
     outBufDesc.numBufs = 1;
-    outBufDesc.bufs = &outPtr;
+    outBufDesc.bufs = (XDAS_Int8 **) &buf;
     outBufDesc.bufSizes = outBufSizeArray;
 
     inArgs.size = sizeof(IH264VENC_InArgs);
@@ -252,4 +253,6 @@ AVCodec ff_libdm365_h264_encoder =
     .close          = dm365_encode_close,
     .encode         = dm365_encode_frame,
     .capabilities   = CODEC_CAP_EXPERIMENTAL | CODEC_CAP_DR1,
+    .pix_fmts       = (const enum PixelFormat[]) {PIX_FMT_NV12, PIX_FMT_NONE},
+    .long_name      = NULL_IF_CONFIG_SMALL("h.264 hardware encoder on dm365 SoC"),
 };
