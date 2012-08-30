@@ -140,6 +140,16 @@ static int h264_dec_init(AVCodecContext *avctx)
     params->size = sizeof(IH264VDEC_Params);
     dynParams->size = sizeof(IH264VDEC_DynamicParams);
 
+    ctx->hDecode = decoder_create(ctx->hEngine, "h264dec",
+            ctx->codecParams, ctx->codecDynParams);
+
+    if (!ctx->hDecode) {
+        av_log(avctx, AV_LOG_ERROR, "Cannot create decoder\n");
+        av_free(h264Params);
+        av_free(h264DynParams);
+        return -1;
+    }
+
     ctx->codecParams = h264Params;
     ctx->codecDynParams  = h264DynParams;
 
@@ -155,26 +165,28 @@ static av_cold int dm365_decode_init(AVCodecContext *avctx)
 
     CERuntime_init();
 
-    ctx->hEngine = Engine_open((String)"decode", NULL, NULL);
+    ctx->hEngine = Engine_open("decode", NULL, NULL);
     if (ctx->hEngine == NULL) {
         av_log(avctx, AV_LOG_ERROR, "Cannot open codec engine.\n");
         return AVERROR(1);
     }
 
-    if (h264_dec_init(avctx) < 0) {
+    switch (avctx->codec_id) {
+    case CODEC_ID_H264:
+        ret = h264_dec_init(avctx);
+        break;
+    default:
+        ret = -1;
+        break;
+    }
+
+    if (ret < 0) {
         Engine_close(ctx->hEngine);
-        return AVERROR(1);
+        CERuntime_exit();
+        return ret;
     }
 
-    ctx->hDecode = decoder_create(ctx->hEngine, "h264dec",
-            ctx->codecParams, ctx->codecDynParams);
-
-    if (!ctx->hDecode) {
-        av_log(avctx, AV_LOG_ERROR, "Cannot create decoder\n");
-        goto init_cleanup2;
-        ret = AVERROR(1);
-    }
-
+    /* get output buffer requirements */
     decStatus.data.buf = NULL;
     decStatus.size = sizeof(VIDDEC2_Status);
     decStatus.maxNumDisplayBufs = 0;
@@ -196,7 +208,7 @@ static av_cold int dm365_decode_init(AVCodecContext *avctx)
         buf_size += ctx->minOutBufSize[i];
     }
 
-
+    /* allocate continous buffers */
     CMEM_init();
     ctx->out_buf = CMEM_alloc(buf_size, &alloc_params);
     if (ctx->out_buf == NULL) {
@@ -218,7 +230,6 @@ static av_cold int dm365_decode_init(AVCodecContext *avctx)
 
 init_cleanup:
     VIDDEC2_delete(ctx->hDecode);
-init_cleanup2:
     av_free(ctx->codecParams);
     av_free(ctx->codecDynParams);
     Engine_close(ctx->hEngine);

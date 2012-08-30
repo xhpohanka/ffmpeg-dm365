@@ -100,29 +100,26 @@ static VIDENC1_Handle encoder_create(Engine_Handle hEngine, const char *encoder,
     return hEncode;
 }
 
-static av_cold int dm365_encode_init(AVCodecContext *avctx)
+static av_cold int h264_enc_init(AVCodecContext *avctx)
 {
+    DM365Context *ctx = avctx->priv_data;
     IH264VENC_Params *h264Params;
     IH264VENC_DynamicParams *h246DynParams;
     VIDENC1_Params *encParams;
     VIDENC1_DynamicParams *dynParams;
-    DM365Context *ctx = avctx->priv_data;
 
-    CERuntime_init();
-
-    ctx->hEngine = Engine_open((String)"encode", NULL, NULL);
-    if (ctx->hEngine == NULL)
-        return AVERROR(1);
+    if (avctx->pix_fmt != PIX_FMT_NV12) {
+        av_log(avctx, AV_LOG_INFO, "unsupported pixel format\n");
+        return -1;
+    }
 
     h264Params = av_malloc(sizeof(IH264VENC_Params));
     if (!h264Params) {
-        Engine_close(ctx->hEngine);
         return AVERROR(ENOMEM);
     }
     h246DynParams = av_malloc(sizeof(IH264VENC_DynamicParams));
     if (!h246DynParams) {
         av_free(h264Params);
-        Engine_close(ctx->hEngine);
         return AVERROR(ENOMEM);
     }
 
@@ -160,17 +157,45 @@ static av_cold int dm365_encode_init(AVCodecContext *avctx)
     h246DynParams->VUI_Buffer->fixedFrameRateFlag = 1;
     h246DynParams->enablePicTimSEI = 1;
 
-    ctx->codecParams = h264Params;
-    ctx->codecDynParams = h246DynParams;
-
     ctx->hEncode = encoder_create(ctx->hEngine, "h264enc",
             ctx->codecParams, ctx->codecDynParams);
     if (!ctx->hEncode) {
         av_log(avctx, AV_LOG_ERROR, "Cannot create encoder\n");
         av_free(ctx->codecParams);
         av_free(ctx->codecDynParams);
-        Engine_close(ctx->hEngine);
+        return -1;
+    }
+
+    ctx->codecParams = h264Params;
+    ctx->codecDynParams = h246DynParams;
+
+    return 0;
+}
+
+static av_cold int dm365_encode_init(AVCodecContext *avctx)
+{
+    DM365Context *ctx = avctx->priv_data;
+    int ret;
+
+    CERuntime_init();
+
+    ctx->hEngine = Engine_open("encode", NULL, NULL);
+    if (ctx->hEngine == NULL)
         return AVERROR(1);
+
+    switch (avctx->codec_id) {
+    case CODEC_ID_H264:
+        ret = h264_enc_init(avctx);
+        break;
+    default:
+        ret = -1;
+        break;
+    }
+
+    if (ret < 0) {
+        Engine_close(ctx->hEngine);
+        CERuntime_exit();
+        return ret;
     }
 
     avctx->coded_frame = &ctx->image;
