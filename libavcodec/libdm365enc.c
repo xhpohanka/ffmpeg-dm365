@@ -157,17 +157,17 @@ static av_cold int h264_enc_init(AVCodecContext *avctx)
     h246DynParams->VUI_Buffer->fixedFrameRateFlag = 1;
     h246DynParams->enablePicTimSEI = 1;
 
+    ctx->codecParams = h264Params;
+    ctx->codecDynParams = h246DynParams;
+
     ctx->hEncode = encoder_create(ctx->hEngine, "h264enc",
             ctx->codecParams, ctx->codecDynParams);
     if (!ctx->hEncode) {
         av_log(avctx, AV_LOG_ERROR, "Cannot create encoder\n");
-        av_free(ctx->codecParams);
-        av_free(ctx->codecDynParams);
+        av_freep(&ctx->codecParams);
+        av_freep(&ctx->codecDynParams);
         return -1;
     }
-
-    ctx->codecParams = h264Params;
-    ctx->codecDynParams = h246DynParams;
 
     return 0;
 }

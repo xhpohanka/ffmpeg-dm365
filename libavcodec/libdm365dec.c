@@ -127,6 +127,12 @@ static int h264_dec_init(AVCodecContext *avctx)
 
     /* set default params */
     *h264Params = IH264VDEC_PARAMS;
+    h264Params->frame_closedloop_flag = 1;
+    h264Params->levelLimit = LEVEL_4_2;
+    h264Params->inputDataMode = IH264VDEC_TI_ENTIREFRAME;
+    h264Params->sliceFormat = IH264VDEC_TI_BYTESTREAM;
+
+    h264DynParams->resetHDVICPeveryFrame = 1;
 
     params = &h264Params->viddecParams;
     dynParams = &h264DynParams->viddecDynamicParams;
@@ -140,18 +146,18 @@ static int h264_dec_init(AVCodecContext *avctx)
     params->size = sizeof(IH264VDEC_Params);
     dynParams->size = sizeof(IH264VDEC_DynamicParams);
 
+    ctx->codecParams = h264Params;
+    ctx->codecDynParams  = h264DynParams;
+
     ctx->hDecode = decoder_create(ctx->hEngine, "h264dec",
             ctx->codecParams, ctx->codecDynParams);
 
     if (!ctx->hDecode) {
         av_log(avctx, AV_LOG_ERROR, "Cannot create decoder\n");
-        av_free(h264Params);
-        av_free(h264DynParams);
+        av_freep(&ctx->codecParams);
+        av_freep(&ctx->codecDynParams);
         return -1;
     }
-
-    ctx->codecParams = h264Params;
-    ctx->codecDynParams  = h264DynParams;
 
     return 0;
 }
@@ -258,12 +264,13 @@ static int dm365_decode_frame(AVCodecContext *avctx,
 {
     DM365Context *ctx = avctx->priv_data;
     AVFrame *picture = outdata;
-    VIDDEC2_InArgs inArgs;
-    VIDDEC2_OutArgs outArgs;
+    IVIDDEC2_InArgs inArgs;
+    IVIDDEC2_OutArgs outArgs;
     XDAS_Int32 status;
     XDM1_BufDesc inBufDesc;
     XDM_BufDesc outBufDesc;
     XDAS_Int8 *outBufPtrArray[2];
+
 
     outBufPtrArray[0] = ctx->out_buf;
     outBufPtrArray[1] = outBufPtrArray[0] + ctx->minOutBufSize[0];
@@ -309,6 +316,7 @@ static int dm365_decode_frame(AVCodecContext *avctx,
     return avpkt->size;
 }
 
+#if CONFIG_LIBDM365_H264_DECODER
 AVCodec ff_libdm365_h264_decoder =
 {
     .name           = "libdm365_h264",
@@ -321,3 +329,4 @@ AVCodec ff_libdm365_h264_decoder =
     .pix_fmts       = (const enum PixelFormat[]) {PIX_FMT_NV12, PIX_FMT_NONE},
     .long_name      = NULL_IF_CONFIG_SMALL("h.264 hardware decoder on dm365 SoC"),
 };
+#endif
