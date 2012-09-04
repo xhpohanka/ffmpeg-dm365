@@ -46,7 +46,7 @@ typedef struct DM365Context {
 /*
  * Default parameters for hardware encoder
  */
-const VIDENC1_Params Venc1_Params_DEFAULT = {
+static const VIDENC1_Params Venc1_Params_DEFAULT = {
     sizeof(VIDENC1_Params),           /* size */
     XDM_DEFAULT,                      /* encodingPreset */
     IVIDEO_LOW_DELAY,                 /* rateControlPreset */
@@ -61,7 +61,7 @@ const VIDENC1_Params Venc1_Params_DEFAULT = {
     XDM_CHROMA_NA                     /* reconChromaFormat */
 };
 
-const VIDENC1_DynamicParams Venc1_DynamicParams_DEFAULT = {
+static const VIDENC1_DynamicParams Venc1_DynamicParams_DEFAULT = {
     sizeof(IVIDENC1_DynamicParams),   /* size */
     1200,                             /* inputHeight */
     1600,                             /* inputWidth */
@@ -177,7 +177,11 @@ static av_cold int dm365_encode_init(AVCodecContext *avctx)
     DM365Context *ctx = avctx->priv_data;
     int ret;
 
-    CERuntime_init();
+    /*
+     * CERuntime_init() has to be called from main application
+     * as well as CERuntime_exit(). Otherwise other dm365 codec
+     * initialization or deinitialization could break everything
+     */
 
     ctx->hEngine = Engine_open("encode", NULL, NULL);
     if (ctx->hEngine == NULL)
@@ -194,7 +198,6 @@ static av_cold int dm365_encode_init(AVCodecContext *avctx)
 
     if (ret < 0) {
         Engine_close(ctx->hEngine);
-        CERuntime_exit();
         return ret;
     }
 
@@ -211,8 +214,6 @@ static av_cold int dm365_encode_close(AVCodecContext *avctx)
     av_free(ctx->codecDynParams);
     av_free(ctx->codecParams);
     Engine_close(ctx->hEngine);
-
-    CERuntime_exit();
 
     return 0;
 }

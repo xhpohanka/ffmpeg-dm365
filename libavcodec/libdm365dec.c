@@ -53,7 +53,7 @@ typedef struct DM365Context {
     XDAS_Int32 minOutBufSize[4];
 } DM365Context;
 
-const VIDDEC2_Params Vdec2_Params_DEFAULT = {
+static const VIDDEC2_Params Vdec2_Params_DEFAULT = {
     sizeof(VIDDEC2_Params),             /* size */
     576,                                /* maxHeight */
     720,                                /* maxWidth */
@@ -63,7 +63,7 @@ const VIDDEC2_Params Vdec2_Params_DEFAULT = {
     XDM_YUV_420SP,                      /* forceChromaFormat */
 };
 
-const VIDDEC2_DynamicParams Vdec2_DynamicParams_DEFAULT = {
+static const VIDDEC2_DynamicParams Vdec2_DynamicParams_DEFAULT = {
     sizeof(VIDDEC2_DynamicParams),      /* size */
     XDM_DECODE_AU,                      /* decodeHeader */
     0,                                  /* displayWidth */
@@ -169,7 +169,16 @@ static av_cold int dm365_decode_init(AVCodecContext *avctx)
     VIDDEC2_Status decStatus;
     int ret, i, buf_size;
 
-    CERuntime_init();
+    /*
+     * CERuntime_init() has to be called from main application
+     * as well as CERuntime_exit(). Otherwise other dm365 codec
+     * initialization or deinitialization could break everything
+     *
+     * CMEM_init() and CMEM_exit() is implemented more reasonably as it counts
+     * its users, so we just need to assure that calls to init and exit equals.
+     */
+
+    CMEM_init();
 
     ctx->hEngine = Engine_open("decode", NULL, NULL);
     if (ctx->hEngine == NULL) {
@@ -188,7 +197,6 @@ static av_cold int dm365_decode_init(AVCodecContext *avctx)
 
     if (ret < 0) {
         Engine_close(ctx->hEngine);
-        CERuntime_exit();
         return ret;
     }
 
@@ -215,7 +223,6 @@ static av_cold int dm365_decode_init(AVCodecContext *avctx)
     }
 
     /* allocate continous buffers */
-    CMEM_init();
     ctx->out_buf = CMEM_alloc(buf_size, &alloc_params);
     if (ctx->out_buf == NULL) {
         ret = AVERROR(ENOMEM);
@@ -250,7 +257,6 @@ static av_cold int dm365_decode_close(AVCodecContext *avctx)
     av_free(ctx->codecParams);
     av_free(ctx->codecDynParams);
     Engine_close(ctx->hEngine);
-    CERuntime_exit();
 
     CMEM_free(ctx->out_buf, &alloc_params);
     CMEM_free(ctx->in_buf, &alloc_params);
