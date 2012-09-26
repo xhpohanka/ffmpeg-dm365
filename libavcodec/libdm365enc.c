@@ -105,8 +105,8 @@ static av_cold int h264_enc_init(AVCodecContext *avctx)
     DM365Context *ctx = avctx->priv_data;
     IH264VENC_Params *h264Params;
     IH264VENC_DynamicParams *h246DynParams;
-    VIDENC1_Params *encParams;
-    VIDENC1_DynamicParams *dynParams;
+    IVIDENC1_Params *encParams;
+    IVIDENC1_DynamicParams *dynParams;
 
     if (avctx->pix_fmt != PIX_FMT_NV12) {
         av_log(avctx, AV_LOG_INFO, "unsupported pixel format\n");
@@ -132,8 +132,6 @@ static av_cold int h264_enc_init(AVCodecContext *avctx)
     *dynParams = Venc1_DynamicParams_DEFAULT;
 
     encParams->inputChromaFormat = XDM_YUV_420SP;
-    encParams->maxWidth  = avctx->width;
-    encParams->maxHeight = avctx->height;
     encParams->encodingPreset  = XDM_HIGH_SPEED;
     encParams->inputChromaFormat = XDM_YUV_420SP;
     encParams->rateControlPreset = IVIDEO_NONE;
@@ -143,9 +141,11 @@ static av_cold int h264_enc_init(AVCodecContext *avctx)
     dynParams->targetBitRate   = encParams->maxBitRate;
     dynParams->inputWidth      = avctx->width;
     dynParams->inputHeight     = avctx->height;
+    dynParams->captureWidth    = avctx->width;
     dynParams->refFrameRate    = 30000;
     dynParams->targetFrameRate = 30000;
     dynParams->interFrameInterval = 0;
+    dynParams->intraFrameInterval = avctx->gop_size;
     dynParams->size = sizeof(IH264VENC_DynamicParams);
 
     h264Params->enableVUIparams = 0x04;
@@ -156,6 +156,7 @@ static av_cold int h264_enc_init(AVCodecContext *avctx)
     h246DynParams->VUI_Buffer->timingInfoPresentFlag = 1;
     h246DynParams->VUI_Buffer->fixedFrameRateFlag = 1;
     h246DynParams->enablePicTimSEI = 1;
+    h246DynParams->idrFrameInterval = dynParams->intraFrameInterval;
 
     ctx->codecParams = h264Params;
     ctx->codecDynParams = h246DynParams;
@@ -225,24 +226,44 @@ static int encoder_process(VIDENC1_Handle hEncode,
     DM365Context *ctx = avctx->priv_data;
     IVIDEO1_BufDescIn inBufDesc;
     XDM_BufDesc outBufDesc;
-    XDAS_Int8 *inPtr;
     XDAS_Int32 outBufSizeArray[1];
     VIDENC1_InArgs inArgs;
-    IH264VENC_InArgs inH264Args;
     VIDENC1_OutArgs outArgs;
     XDAS_Int32 status;
     AVFrame *pic = (AVFrame *)data;
+    IVIDENC1_DynamicParams *dynParams = (IVIDENC1_DynamicParams *) ctx->codecDynParams;
+    int frameWidth;
+    int frameHeight;
 
-    inBufDesc.frameWidth = avctx->width;
-    inBufDesc.frameHeight = avctx->height;
-    inBufDesc.framePitch = avctx->width;
+    /* inBufDesc.framePitch field is not used in encoder,
+     * different pitch has to be specified through XDM_SETPARAMS */
+    if (pic->linesize[0] != dynParams->captureWidth) {
+        VIDENC1_Status encStatus;
+        int tmp = dynParams->captureWidth;
 
-    inBufDesc.bufDesc[0].bufSize = avctx->width * avctx->height;
-    inBufDesc.bufDesc[1].bufSize = inBufDesc.bufDesc[0].bufSize /2;
+        encStatus.size = sizeof(VIDENC1_Status);
+        encStatus.data.buf = NULL;
 
-    inPtr = pic->data[0];
-    inBufDesc.bufDesc[0].buf = inPtr;
-    inBufDesc.bufDesc[1].buf = inPtr + inBufDesc.bufDesc[0].bufSize;
+        dynParams->captureWidth = pic->linesize[0];
+
+        status = VIDENC1_control(hEncode, XDM_SETPARAMS, dynParams, &encStatus);
+        if (status != VIDENC1_EOK) {
+            dynParams->captureWidth = tmp;
+            return -1;
+        }
+    }
+
+    frameWidth  = FFALIGN(avctx->width, 16);
+    frameHeight = FFALIGN(avctx->height, 16);
+
+    inBufDesc.frameWidth = frameWidth;
+    inBufDesc.frameHeight = frameHeight;
+
+    inBufDesc.bufDesc[0].bufSize = pic->linesize[0] * pic->height;
+    inBufDesc.bufDesc[1].bufSize = pic->linesize[1] * pic->height/2;
+
+    inBufDesc.bufDesc[0].buf = pic->data[0];
+    inBufDesc.bufDesc[1].buf = pic->data[1];
 
     inBufDesc.numBufs = 2;
 
@@ -251,27 +272,24 @@ static int encoder_process(VIDENC1_Handle hEncode,
     outBufDesc.bufs = (XDAS_Int8 **) &buf;
     outBufDesc.bufSizes = outBufSizeArray;
 
-    inArgs.size = sizeof(IH264VENC_InArgs);
+    inArgs.size = sizeof(VIDENC1_InArgs);
     inArgs.inputID = 1;
     inArgs.topFieldFirstFlag = 1;
-
-    inH264Args.videncInArgs = inArgs;
-    inH264Args.insertUserData = 0;
-    inH264Args.lengthUserData = 0;
-    inH264Args.numOutputDataUnits = 0;
 
     outArgs.size = sizeof(VIDENC1_OutArgs);
 
     status = VIDENC1_process(hEncode, &inBufDesc, &outBufDesc,
-            (VIDENC1_InArgs *) &inH264Args, &outArgs);
+            (VIDENC1_InArgs *) &inArgs, &outArgs);
     if (status != VIDENC1_EOK)
         return -1;
 
     av_log(avctx, AV_LOG_DEBUG, "bytes generated: %d\n", (int) outArgs.bytesGenerated);
 
     switch (outArgs.encodedFrameType) {
-    case IVIDEO_IDR_FRAME:
     case IVIDEO_I_FRAME:
+        ctx->image.type = AV_PICTURE_TYPE_I;
+        break;
+    case IVIDEO_IDR_FRAME:
         ctx->image.key_frame = 1;
         ctx->image.type = AV_PICTURE_TYPE_I;
         break;
