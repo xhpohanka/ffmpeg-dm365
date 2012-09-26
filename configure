@@ -185,6 +185,7 @@ External library support:
   --enable-libvorbis       enable Vorbis encoding via libvorbis,
                            native implementation exists [no]
   --enable-libvpx          enable VP8 support via libvpx [no]
+  --enable-libdm365        enable DM365 HW codecs support [no]
   --enable-libx264         enable H.264 encoding via x264 [no]
   --enable-libxavs         enable AVS encoding via xavs [no]
   --enable-libxvid         enable Xvid encoding via xvidcore,
@@ -950,6 +951,7 @@ CONFIG_LIST="
     libvo_amrwbenc
     libvorbis
     libvpx
+    libdm365
     libx264
     libxavs
     libxvid
@@ -1428,6 +1430,8 @@ libvo_amrwbenc_encoder_deps="libvo_amrwbenc"
 libvorbis_encoder_deps="libvorbis"
 libvpx_decoder_deps="libvpx"
 libvpx_encoder_deps="libvpx"
+libdm365_h264_decoder_deps="libdm365"
+libdm365_h264_encoder_deps="libdm365"
 libx264_encoder_deps="libx264"
 libxavs_encoder_deps="libxavs"
 libxvid_encoder_deps="libxvid"
@@ -2950,6 +2954,11 @@ enabled libvpx     && {
                                 die "ERROR: libvpx decoder version must be >=0.9.1"; }
     enabled libvpx_encoder && { check_lib2 "vpx/vpx_encoder.h vpx/vp8cx.h" "vpx_codec_enc_init_ver VPX_CQ" -lvpx ||
                                 die "ERROR: libvpx encoder version must be >=0.9.6"; } }
+enabled libdm365     && {
+    enabled libdm365_h264_decoder && { check_header "xdc/std.h" ||
+                                die "xdc tools has to be available"; }
+    enabled libdm365_h264_encoder && { check_header "xdc/std.h" ||
+                                die "xdc tools has to be available"; } }
 enabled libx264    && require  libx264 x264.h x264_encoder_encode -lx264 &&
                       { check_cpp_condition x264.h "X264_BUILD >= 115" ||
                         die "ERROR: libx264 version must be >= 0.115."; }
@@ -3253,6 +3262,7 @@ echo "libvo-aacenc support      ${libvo_aacenc-no}"
 echo "libvo-amrwbenc support    ${libvo_amrwbenc-no}"
 echo "libvorbis enabled         ${libvorbis-no}"
 echo "libvpx enabled            ${libvpx-no}"
+echo "libdm365 enabled          ${libdm365-no}"
 echo "libx264 enabled           ${libx264-no}"
 echo "libxavs enabled           ${libxavs-no}"
 echo "libxvid enabled           ${libxvid-no}"
