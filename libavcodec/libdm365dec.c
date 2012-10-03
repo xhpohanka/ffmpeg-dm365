@@ -73,9 +73,8 @@ static const VIDDEC2_DynamicParams Vdec2_DynamicParams_DEFAULT = {
     0,                                  /* mbDataFlag */
 };
 
-static VIDDEC2_Handle decoder_create(Engine_Handle hEngine, String codecName,
-        VIDDEC2_Params *params,
-        VIDDEC2_DynamicParams *dynParams)
+static VIDDEC2_Handle decoder_create(AVCodecContext *avctx, Engine_Handle hEngine,
+        String codecName, VIDDEC2_Params *params, VIDDEC2_DynamicParams *dynParams)
 {
     VIDDEC2_Handle         hDecode;
     VIDDEC2_Status         decStatus;
@@ -94,9 +93,11 @@ static VIDDEC2_Handle decoder_create(Engine_Handle hEngine, String codecName,
     /* Set video decoder dynamic params */
     decStatus.data.buf = NULL;
     decStatus.size = sizeof(VIDDEC2_Status);
-    status = VIDDEC2_control(hDecode, XDM_SETPARAMS, dynParams, &decStatus);
 
+    status = VIDDEC2_control(hDecode, XDM_SETPARAMS, dynParams, &decStatus);
     if (status != VIDDEC2_EOK) {
+        IH264VDEC_ExtendedError err = decStatus.extendedError;
+        av_log(avctx, AV_LOG_ERROR, "extended error: %x", err);
         VIDDEC2_delete(hDecode);
         return NULL;
     }
@@ -149,7 +150,7 @@ static int h264_dec_init(AVCodecContext *avctx)
     ctx->codecParams = h264Params;
     ctx->codecDynParams  = h264DynParams;
 
-    ctx->hDecode = decoder_create(ctx->hEngine, "h264dec",
+    ctx->hDecode = decoder_create(avctx, ctx->hEngine, "h264dec",
             ctx->codecParams, ctx->codecDynParams);
 
     if (!ctx->hDecode) {
@@ -208,7 +209,9 @@ static av_cold int dm365_decode_init(AVCodecContext *avctx)
     status = VIDDEC2_control(ctx->hDecode, XDM_GETBUFINFO,
             ctx->codecDynParams, &decStatus);
     if (status != VIDDEC2_EOK) {
-        av_log(avctx, AV_LOG_ERROR, "XDM_GETBUFINFO control failed\n");
+        IH264VDEC_ExtendedError err = decStatus.extendedError;
+        av_log(avctx, AV_LOG_ERROR, "XDM_GETBUFINFO control failed, "
+                "extended error: %x", err);
         ret = AVERROR(1);
         goto init_cleanup;
     }
@@ -265,6 +268,31 @@ static av_cold int dm365_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
+static enum AVPictureType picture_type(IVIDEO_FrameType frameType)
+{
+    enum AVPictureType pict_type;
+
+    switch (frameType) {
+    case IVIDEO_I_FRAME:
+        pict_type = AV_PICTURE_TYPE_I;
+        break;
+    case IVIDEO_IDR_FRAME:
+        pict_type = AV_PICTURE_TYPE_I;
+        break;
+    case IVIDEO_P_FRAME:
+        pict_type = AV_PICTURE_TYPE_P;
+        break;
+    case IVIDEO_B_FRAME:
+        pict_type = AV_PICTURE_TYPE_B;
+        break;
+    default:
+        pict_type = AV_PICTURE_TYPE_NONE;
+        break;
+    }
+
+    return pict_type;
+}
+
 static int dm365_decode_frame(AVCodecContext *avctx,
         void *outdata, int *outdata_size, AVPacket *avpkt)
 {
@@ -300,8 +328,10 @@ static int dm365_decode_frame(AVCodecContext *avctx,
     outArgs.size    = sizeof(VIDDEC2_OutArgs);
 
     status = VIDDEC2_process(ctx->hDecode, &inBufDesc, &outBufDesc,
-            (VIDDEC2_InArgs *) &inArgs, (VIDDEC2_OutArgs *) &outArgs);
+            (IVIDDEC2_InArgs *) &inArgs, (IVIDDEC2_OutArgs *) &outArgs);
     if (status != VIDDEC2_EOK) {
+        IH264VDEC_ExtendedError err = outArgs.decodedBufs.extendedError & 0xff;
+        av_log(avctx, AV_LOG_ERROR, "extended error: %x\n", err);
         return AVERROR_INVALIDDATA;
     } else {
         IVIDEO1_BufDesc *bd = &outArgs.decodedBufs;
@@ -314,6 +344,7 @@ static int dm365_decode_frame(AVCodecContext *avctx,
         picture->linesize[1] = bd->framePitch;
         picture->linesize[2] = 0;
         picture->linesize[3] = 0;
+        picture->pict_type = picture_type(bd->frameType);
     }
     *outdata_size = sizeof(AVPicture);
 

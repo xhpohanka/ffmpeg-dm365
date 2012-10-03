@@ -76,8 +76,8 @@ static const VIDENC1_DynamicParams Venc1_DynamicParams_DEFAULT = {
     0                                 /* mbDataFlag */
 };
 
-static VIDENC1_Handle encoder_create(Engine_Handle hEngine, const char *encoder,
-        VIDENC1_Params *params, VIDENC1_DynamicParams *dynParams)
+static VIDENC1_Handle encoder_create(AVCodecContext *avctx, Engine_Handle hEngine,
+        const char *encoder, VIDENC1_Params *params, VIDENC1_DynamicParams *dynParams)
 {
     VIDENC1_Handle hEncode;
     VIDENC1_Status encStatus;
@@ -92,6 +92,8 @@ static VIDENC1_Handle encoder_create(Engine_Handle hEngine, const char *encoder,
 
     status = VIDENC1_control(hEncode, XDM_SETPARAMS, dynParams, &encStatus);
     if (status != VIDENC1_EOK) {
+        IH264VENC_STATUS err = encStatus.extendedError;
+        av_log(avctx, AV_LOG_ERROR, "extended error: %x\n", err);
         VIDENC1_delete(hEncode);
         hEncode = NULL;
         return hEncode;
@@ -152,16 +154,20 @@ static av_cold int h264_enc_init(AVCodecContext *avctx)
 
     h246DynParams->VUI_Buffer = &H264VENC_TI_VUIPARAMBUFFER;
     h246DynParams->VUI_Buffer->numUnitsInTicks = avctx->time_base.num;
-    h246DynParams->VUI_Buffer->timeScale = avctx->time_base.den;
+    h246DynParams->VUI_Buffer->timeScale = avctx->time_base.den * 2; /* field rate !!*/
     h246DynParams->VUI_Buffer->timingInfoPresentFlag = 1;
     h246DynParams->VUI_Buffer->fixedFrameRateFlag = 1;
     h246DynParams->enablePicTimSEI = 1;
     h246DynParams->idrFrameInterval = dynParams->intraFrameInterval;
+    h246DynParams->rcQMax = avctx->qmax;
+    h246DynParams->rcQMin = avctx->qmin;
+    h246DynParams->aspectRatioX = avctx->sample_aspect_ratio.num ? avctx->sample_aspect_ratio.num : 1;
+    h246DynParams->aspectRatioY = avctx->sample_aspect_ratio.den ? avctx->sample_aspect_ratio.den : 1;
 
     ctx->codecParams = h264Params;
     ctx->codecDynParams = h246DynParams;
 
-    ctx->hEncode = encoder_create(ctx->hEngine, "h264enc",
+    ctx->hEncode = encoder_create(avctx, ctx->hEngine, "h264enc",
             ctx->codecParams, ctx->codecDynParams);
     if (!ctx->hEncode) {
         av_log(avctx, AV_LOG_ERROR, "Cannot create encoder\n");
@@ -169,6 +175,9 @@ static av_cold int h264_enc_init(AVCodecContext *avctx)
         av_freep(&ctx->codecDynParams);
         return -1;
     }
+
+    /* dm365 h264 encoder does not support B-frames */
+    avctx->has_b_frames = 0;
 
     return 0;
 }
@@ -248,6 +257,8 @@ static int encoder_process(VIDENC1_Handle hEncode,
 
         status = VIDENC1_control(hEncode, XDM_SETPARAMS, dynParams, &encStatus);
         if (status != VIDENC1_EOK) {
+            IH264VENC_STATUS err = encStatus.extendedError;
+            av_log(avctx, AV_LOG_ERROR, "extended error: %x\n", err);
             dynParams->captureWidth = tmp;
             return -1;
         }
@@ -259,8 +270,8 @@ static int encoder_process(VIDENC1_Handle hEncode,
     inBufDesc.frameWidth = frameWidth;
     inBufDesc.frameHeight = frameHeight;
 
-    inBufDesc.bufDesc[0].bufSize = pic->linesize[0] * pic->height;
-    inBufDesc.bufDesc[1].bufSize = pic->linesize[1] * pic->height/2;
+    inBufDesc.bufDesc[0].bufSize = pic->linesize[0] * frameHeight;
+    inBufDesc.bufDesc[1].bufSize = pic->linesize[1] * frameHeight/2;
 
     inBufDesc.bufDesc[0].buf = pic->data[0];
     inBufDesc.bufDesc[1].buf = pic->data[1];
@@ -280,11 +291,15 @@ static int encoder_process(VIDENC1_Handle hEncode,
 
     status = VIDENC1_process(hEncode, &inBufDesc, &outBufDesc,
             (VIDENC1_InArgs *) &inArgs, &outArgs);
-    if (status != VIDENC1_EOK)
+    if (status != VIDENC1_EOK) {
+        IH264VENC_STATUS err = outArgs.extendedError;
+        av_log(avctx, AV_LOG_ERROR, "encoding error: %x\n", err);
         return -1;
+    }
 
     av_log(avctx, AV_LOG_DEBUG, "bytes generated: %d\n", (int) outArgs.bytesGenerated);
 
+    ctx->image.key_frame = 0;
     switch (outArgs.encodedFrameType) {
     case IVIDEO_I_FRAME:
         ctx->image.type = AV_PICTURE_TYPE_I;
