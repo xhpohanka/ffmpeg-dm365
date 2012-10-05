@@ -574,6 +574,7 @@ OBJS-$(CONFIG_LIBDIRAC_ENCODER)           += libdiracenc.o libdirac_libschro.o
 OBJS-$(CONFIG_LIBFAAC_ENCODER)            += libfaac.o
 OBJS-$(CONFIG_LIBDM365_H264_DECODER)      += libdm365dec.o
 OBJS-$(CONFIG_LIBDM365_H264_ENCODER)      += libdm365enc.o
+OBJS-$(CONFIG_LIBDM365_JPEG_ENCODER)      += libdm365enc.o
 OBJS-$(CONFIG_LIBGSM_DECODER)             += libgsm.o
 OBJS-$(CONFIG_LIBGSM_ENCODER)             += libgsm.o
 OBJS-$(CONFIG_LIBGSM_MS_DECODER)          += libgsm.o

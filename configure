@@ -1432,6 +1432,7 @@ libvpx_decoder_deps="libvpx"
 libvpx_encoder_deps="libvpx"
 libdm365_h264_decoder_deps="libdm365"
 libdm365_h264_encoder_deps="libdm365"
+libdm365_jpeg_encoder_deps="libdm365"
 libx264_encoder_deps="libx264"
 libxavs_encoder_deps="libxavs"
 libxvid_encoder_deps="libxvid"
@@ -2954,11 +2955,13 @@ enabled libvpx     && {
                                 die "ERROR: libvpx decoder version must be >=0.9.1"; }
     enabled libvpx_encoder && { check_lib2 "vpx/vpx_encoder.h vpx/vp8cx.h" "vpx_codec_enc_init_ver VPX_CQ" -lvpx ||
                                 die "ERROR: libvpx encoder version must be >=0.9.6"; } }
-enabled libdm365     && {
-    enabled libdm365_h264_decoder && { check_header "xdc/std.h" ||
-                                die "xdc tools has to be available"; }
-    enabled libdm365_h264_encoder && { check_header "xdc/std.h" ||
-                                die "xdc tools has to be available"; } }
+enabled libdm365   && { check_header "xdc/std.h" || die "ERROR: xdc tools not avialable for libdm365"; } && {
+    enabled libdm365_h264_decoder && { check_func_headers "xdc/std.h ti/sdo/ce/video2/viddec2.h ti/sdo/codecs/h264dec/ih264vdec.h" VIDDEC2_process ||
+                                die "ERROR: dm365 h264 decoder library not available"; }
+    enabled libdm365_h264_encoder && { check_func_headers "xdc/std.h ti/sdo/ce/video1/videnc1.h ti/sdo/codecs/h264enc/ih264venc.h" VIDENC1_process ||
+                                die "ERROR: dm365 h264 encoder library not available"; }
+    enabled libdm365_jpeg_encoder && { check_func_headers "xdc/std.h ti/sdo/ce/image1/imgenc1.h ti/sdo/codecs/jpegenc/ijpegenc.h" IMGENC1_process ||
+                                die "ERROR: dm365 jpeg encoder library not available"; } }
 enabled libx264    && require  libx264 x264.h x264_encoder_encode -lx264 &&
                       { check_cpp_condition x264.h "X264_BUILD >= 115" ||
                         die "ERROR: libx264 version must be >= 0.115."; }
