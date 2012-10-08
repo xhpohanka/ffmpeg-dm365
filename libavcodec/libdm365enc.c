@@ -518,6 +518,6 @@ AVCodec ff_libdm365_jpeg_encoder = {
     .encode         = dm365_imgenc_process,
     .capabilities   = CODEC_CAP_EXPERIMENTAL | CODEC_CAP_DR1,
     .pix_fmts       = (const enum PixelFormat[]) {PIX_FMT_NV12, PIX_FMT_NONE},
-    .long_name      = NULL_IF_CONFIG_SMALL("h.264 hardware encoder on dm365 SoC"),
+    .long_name      = NULL_IF_CONFIG_SMALL("jpeg hardware encoder on dm365 SoC"),
 };
 #endif
