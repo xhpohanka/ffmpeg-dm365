@@ -34,6 +34,7 @@
 #include <ti/sdo/ce/Engine.h>
 #include <ti/sdo/ce/video1/videnc1.h>
 #include <ti/sdo/codecs/h264enc/ih264venc.h>
+#include <ti/sdo/codecs/mpeg4enc/imp4venc.h>
 #include <ti/sdo/ce/image1/imgenc1.h>
 #include <ti/sdo/codecs/jpegenc/ijpegenc.h>
 
@@ -80,6 +81,36 @@ static const VIDENC1_DynamicParams Venc1_DynamicParams_DEFAULT = {
 };
 #endif
 
+#if CONFIG_LIBDM365_MPEG4_ENCODER
+static const IMP4VENC_Params IMP4VENC_PARAMS_DEFAULT = {
+        .subWindowHeight = 64,
+        .subWindowWidth = 160,
+        .rotation = 0,
+        .vbvSize = 0,
+        .svhMode = 0,
+        .IFrameBitRateBiasFactor = 256,
+        .PFrameBitRateBiasFactor = 256,
+        .peakBufWindow = 2,
+        .minBitRate = 6000000,
+};
+
+static const IMP4VENC_DynamicParams IMP4VENC_DYNAMIC_PARAMS_DEFAULT = {
+        .intraAlgo = IMP4VENC_INTRA_INTER_DECISION_LQ_HP,
+        .numMBRows = 4,
+        .initQ = 0,
+        .rcQMax = 31,
+        .rcQMin = 31,
+        .intraFrameQP = 0,
+        .interFrameQP = 0,
+        .rateFix = 0,
+        .rateFixRange = 0,
+        .meAlgo = IMP4VENC_ME_MQ_MP,
+        .skipMBAlgo = IMP4VENC_SKIP_MB_LQ_HP,
+        .unrestrictedMV = IMP4VENC_UMV_LQ_HP,
+        .mvDataEnable = 0,
+};
+#endif
+
 #if CONFIG_LIBDM365_JPEG_ENCODER
 static const IMGENC1_Params Ienc1_Params_DEFAULT = {
     sizeof(IMGENC1_Params),
@@ -101,12 +132,12 @@ static const IIMGENC1_DynamicParams Ienc1_DynamicParams_DEFAULT = {
     75
 };
 
-IJPEGENC_Params IJPEGENC_PARAMS = {
+static const IJPEGENC_Params IJPEGENC_PARAMS_DEFAULT = {
         .halfBufCB = NULL,
         .halfBufCBarg = NULL,
 };
 
-IJPEGENC_DynamicParams IJPEGENC_DYNAMICPARAMS = {
+static const IJPEGENC_DynamicParams IJPEGENC_DYNAMICPARAMS_DEFAULT = {
         .rstInterval = 84,
         .disableEOI = 0,
         .rotation = 0,
@@ -163,8 +194,8 @@ static av_cold int jpeg_enc_init(AVCodecContext *avctx)
         return AVERROR(ENOMEM);
     }
 
-    *jpegParams = IJPEGENC_PARAMS;
-    *jpegDynParams = IJPEGENC_DYNAMICPARAMS;
+    *jpegParams = IJPEGENC_PARAMS_DEFAULT;
+    *jpegDynParams = IJPEGENC_DYNAMICPARAMS_DEFAULT;
     encParams = &(jpegParams->imgencParams);
     dynParams = &(jpegDynParams->imgencDynamicParams);
 
@@ -200,7 +231,7 @@ static av_cold int jpeg_enc_init(AVCodecContext *avctx)
 static av_cold int jpeg_enc_init(AVCodecContext *avctx) { return -1; }
 #endif
 
-#if CONFIG_LIBDM365_H264_ENCODER
+#if CONFIG_LIBDM365_H264_ENCODER || CONFIG_LIBDM365_MPEG4_ENCODER
 static VIDENC1_Handle encoder_create(AVCodecContext *avctx, Engine_Handle hEngine,
         const char *encoder, VIDENC1_Params *params, VIDENC1_DynamicParams *dynParams)
 {
@@ -225,7 +256,9 @@ static VIDENC1_Handle encoder_create(AVCodecContext *avctx, Engine_Handle hEngin
 
     return hEncode;
 }
+#endif
 
+#if CONFIG_LIBDM365_H264_ENCODER
 static av_cold int h264_enc_init(AVCodecContext *avctx)
 {
     DM365Context *ctx = avctx->priv_data;
@@ -308,6 +341,78 @@ static av_cold int h264_enc_init(AVCodecContext *avctx)
 static av_cold int h264_enc_init(AVCodecContext *avctx) { return -1; }
 #endif
 
+#if CONFIG_LIBDM365_H264_ENCODER
+static av_cold int mpeg4_enc_init(AVCodecContext *avctx)
+{
+    DM365Context *ctx = avctx->priv_data;
+    IMP4VENC_Params *mpeg4Params;
+    IMP4VENC_DynamicParams *mpeg4DynParams;
+    IVIDENC1_Params *encParams;
+    IVIDENC1_DynamicParams *dynParams;
+
+    if (avctx->pix_fmt != PIX_FMT_NV12) {
+        av_log(avctx, AV_LOG_INFO, "unsupported pixel format\n");
+        return -1;
+    }
+
+    mpeg4Params = av_malloc(sizeof(IMP4VENC_Params));
+    if (!mpeg4Params)
+        return AVERROR(ENOMEM);
+
+    mpeg4DynParams = av_malloc(sizeof(IMP4VENC_DynamicParams));
+    if (!mpeg4DynParams) {
+        av_free(mpeg4Params);
+        return AVERROR(ENOMEM);
+    }
+
+    *mpeg4Params = IMP4VENC_PARAMS_DEFAULT;
+    *mpeg4DynParams = IMP4VENC_DYNAMIC_PARAMS_DEFAULT;
+    encParams = &(mpeg4Params->videncParams);
+    dynParams = &(mpeg4DynParams->videncDynamicParams);
+
+    *encParams = Venc1_Params_DEFAULT;
+    *dynParams = Venc1_DynamicParams_DEFAULT;
+
+    encParams->encodingPreset  = XDM_HIGH_SPEED;
+    encParams->inputChromaFormat = XDM_YUV_420SP;
+    encParams->rateControlPreset = IVIDEO_NONE;
+    encParams->maxBitRate = avctx->bit_rate * 3/2;
+    encParams->size = sizeof(IMP4VENC_Params);
+
+    dynParams->targetBitRate   = avctx->bit_rate;
+    dynParams->inputWidth      = avctx->width;
+    dynParams->inputHeight     = avctx->height;
+    dynParams->captureWidth    = avctx->width;
+    dynParams->refFrameRate    = 30000;
+    dynParams->targetFrameRate = 30000;
+    dynParams->interFrameInterval = 0;
+    dynParams->intraFrameInterval = avctx->gop_size;
+    dynParams->size = sizeof(IMP4VENC_DynamicParams);
+
+    mpeg4Params->subWindowWidth = avctx->width;
+    mpeg4Params->subWindowHeight = avctx->height;
+
+    mpeg4DynParams->rcQMax = avctx->qmax;
+    mpeg4DynParams->rcQMax = avctx->qmin;
+
+    ctx->codecParams = mpeg4Params;
+    ctx->codecDynParams = mpeg4DynParams;
+
+    ctx->hEncode = encoder_create(avctx, ctx->hEngine, "mpeg4enc",
+            ctx->codecParams, ctx->codecDynParams);
+    if (!ctx->hEncode) {
+        av_log(avctx, AV_LOG_ERROR, "Cannot create encoder\n");
+        av_freep(&ctx->codecParams);
+        av_freep(&ctx->codecDynParams);
+        return -1;
+    }
+
+    return 0;
+}
+#else
+static av_cold int mpeg4_enc_init(AVCodecContext *avctx) { return -1; }
+#endif
+
 static av_cold int dm365_encode_init(AVCodecContext *avctx)
 {
     DM365Context *ctx = avctx->priv_data;
@@ -326,6 +431,9 @@ static av_cold int dm365_encode_init(AVCodecContext *avctx)
     switch (avctx->codec_id) {
     case CODEC_ID_H264:
         ret = h264_enc_init(avctx);
+        break;
+    case CODEC_ID_MPEG4:
+        ret = mpeg4_enc_init(avctx);
         break;
     case CODEC_ID_MJPEG:
         ret = jpeg_enc_init(avctx);
@@ -360,7 +468,7 @@ static av_cold int dm365_encode_close(AVCodecContext *avctx)
     return 0;
 }
 
-#if CONFIG_LIBDM365_H264_ENCODER
+#if CONFIG_LIBDM365_H264_ENCODER || CONFIG_LIBDM365_MPEG4_ENCODER
 static int dm365_videnc_process(AVCodecContext *avctx, uint8_t *buf, int buf_size, void *data)
 {
     DM365Context *ctx = avctx->priv_data;
@@ -433,6 +541,8 @@ static int dm365_videnc_process(AVCodecContext *avctx, uint8_t *buf, int buf_siz
     ctx->image.key_frame = 0;
     switch (outArgs.encodedFrameType) {
     case IVIDEO_I_FRAME:
+        if (avctx->codec_type != CODEC_ID_H264)
+            ctx->image.key_frame = 1;
         ctx->image.type = AV_PICTURE_TYPE_I;
         break;
     case IVIDEO_IDR_FRAME:
@@ -504,6 +614,22 @@ AVCodec ff_libdm365_h264_encoder =
     .capabilities   = CODEC_CAP_EXPERIMENTAL | CODEC_CAP_DR1,
     .pix_fmts       = (const enum PixelFormat[]) {PIX_FMT_NV12, PIX_FMT_NONE},
     .long_name      = NULL_IF_CONFIG_SMALL("h.264 hardware encoder on dm365 SoC"),
+};
+#endif
+
+#if CONFIG_LIBDM365_MPEG4_ENCODER
+AVCodec ff_libdm365_mpeg4_encoder =
+{
+    .name           = "libdm365_mpeg4",
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = CODEC_ID_MPEG4,
+    .priv_data_size = sizeof(DM365Context),
+    .init           = dm365_encode_init,
+    .close          = dm365_encode_close,
+    .encode         = dm365_videnc_process,
+    .capabilities   = CODEC_CAP_EXPERIMENTAL | CODEC_CAP_DR1,
+    .pix_fmts       = (const enum PixelFormat[]) {PIX_FMT_NV12, PIX_FMT_NONE},
+    .long_name      = NULL_IF_CONFIG_SMALL("mpeg4 hardware encoder on dm365 SoC"),
 };
 #endif
 
