@@ -2932,9 +2932,11 @@ check_mathfunc truncf
 if enabled libdm365; then
   test -n "$dvsdk_dir" || die "ERROR: --dvsdk-dir has to be specified."
 
-  FILES="Makefile.xdc config.bld xdc.cfg"
+  if enabled source_path_used; then
+    FILES="Makefile.xdc config.bld xdc.cfg"
+    map 'test -f "$source_path/$v" && $ln_s "$source_path/$v" $v' $FILES
+  fi
 
-  map 'test -f "$source_path/$v" && $ln_s "$source_path/$v" $v' $FILES
   make -f Makefile.xdc ROOTDIR=${dvsdk_dir} || die "ERROR: Cannot prepare XDC build for libdm365."
 
   DVSDK_ROOT=${dvsdk_dir}
