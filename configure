@@ -240,6 +240,7 @@ Advanced options (experts only):
   --malloc-prefix=PFX      prefix malloc and related names with PFX
   --enable-sram            allow use of on-chip SRAM
   --disable-symver         disable symbol versioning
+  --dvsdk-root=DIR         set path to TI DVSDK directory, needed for libdm365
 
 Developer options (useful when working on FFmpeg itself):
   --disable-debug          disable debugging symbols
@@ -1200,6 +1201,7 @@ CMDLINE_SET="
     target_exec
     target_os
     target_path
+    dvsdk_dir
 "
 
 CMDLINE_APPEND="
@@ -2925,6 +2927,30 @@ check_mathfunc round
 check_mathfunc roundf
 check_mathfunc trunc
 check_mathfunc truncf
+
+# for DM365 we need to include additional libraries from DVSDK
+if enabled libdm365; then
+  test -n "$dvsdk_dir" || die "ERROR: --dvsdk-dir has to be specified."
+
+  FILES="Makefile.xdc config.bld xdc.cfg"
+
+  map 'test -f "$source_path/$v" && $ln_s "$source_path/$v" $v' $FILES
+  make -f Makefile.xdc ROOTDIR=${dvsdk_dir} || die "ERROR: Cannot prepare XDC build for libdm365."
+
+  DVSDK_ROOT=${dvsdk_dir}
+
+  add_cflags "-I${DVSDK_ROOT}/codec-engine_2_26_02_11/packages \
+     -I${DVSDK_ROOT}/framework-components_2_26_00_01/packages \
+     -I${DVSDK_ROOT}/xdais_6_26_01_03/packages \
+     -I${DVSDK_ROOT}/linuxutils_2_26_03_06/packages \
+     -I${DVSDK_ROOT}/codecs-dm365/packages \
+     -I${DVSDK_ROOT}/codec-engine_2_26_02_11/examples \
+     -I${DVSDK_ROOT}/xdctools_3_16_03_36/packages \
+     -Dxdc_target_types__=gnu/targets/arm/std.h \
+     -Dxdc_target_name__=GCArmv5T"
+
+  add_extralibs xdclink.cmd
+fi
 
 # these are off by default, so fail if requested and not available
 enabled avisynth   && require2 vfw32 "windows.h vfw.h" AVIFileInit -lavifil32
