@@ -1631,6 +1631,8 @@ static int mjpeg_decode_com(MJpegDecodeContext *s)
     if (len >= 2 && 8 * len - 16 <= get_bits_left(&s->gb)) {
         char *cbuf = av_malloc(len - 1);
         if (cbuf) {
+            GetByteContext gbytes;
+
             int i;
             for (i = 0; i < len - 2; i++)
                 cbuf[i] = get_bits(&s->gb, 8);
@@ -1652,6 +1654,9 @@ static int mjpeg_decode_com(MJpegDecodeContext *s)
             else if ((!strncmp(cbuf, "Intel(R) JPEG Library, version 1", 32)) ||
                      (!strncmp(cbuf, "Metasoft MJPEG Codec", 20)))
                 s->flipped = 1;
+
+            bytestream2_init(&gbytes, cbuf, len);
+            ff_tadd_bytes_metadata(len, "comment", NULL, &gbytes, 0, &s->exif_metadata);
 
             av_free(cbuf);
         }
