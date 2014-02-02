@@ -1656,7 +1656,7 @@ static int mjpeg_decode_com(MJpegDecodeContext *s)
                 s->flipped = 1;
 
             bytestream2_init(&gbytes, cbuf, len);
-            ff_tadd_bytes_metadata(len, "comment", NULL, &gbytes, 0, &s->exif_metadata);
+            ff_tadd_bytes_metadata(len - 2, "comment", NULL, &gbytes, 0, &s->exif_metadata);
 
             av_free(cbuf);
         }

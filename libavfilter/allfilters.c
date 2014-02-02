@@ -149,6 +149,7 @@ void avfilter_register_all(void)
     REGISTER_FILTER(IL,             il,             vf);
     REGISTER_FILTER(INTERLACE,      interlace,      vf);
     REGISTER_FILTER(INTERLEAVE,     interleave,     vf);
+    REGISTER_FILTER(JCSHOWMOTION,   jcshowmotion,   vf);
     REGISTER_FILTER(KERNDEINT,      kerndeint,      vf);
     REGISTER_FILTER(LUT3D,          lut3d,          vf);
     REGISTER_FILTER(LUT,            lut,            vf);
